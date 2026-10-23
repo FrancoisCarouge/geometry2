@@ -36,6 +36,7 @@
 
 #include <array>
 #include <string>
+#include <utility>
 
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/quaternion_stamped.hpp"
@@ -54,6 +55,11 @@
 #include "geometry_msgs/msg/wrench.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "kdl/frames.hpp"
+
+#include "Eigen/Core"
+#include "fcarouge/eigen.hpp"
+#include "fcarouge/mp_units.hpp"
+#include "mp-units/systems/si.h"
 
 #include "tf2/convert.hpp"
 #include "tf2/LinearMath/Quaternion.hpp"
@@ -585,6 +591,26 @@ std::array<std::array<double, 6>, 6> getCovarianceMatrix(
   return covarianceRowMajorToNested(t.covariance);
 }
 
+namespace impl
+{
+namespace typed_covariance
+{
+using Length = mp_units::quantity<mp_units::si::metre, double>;
+using Angle = mp_units::quantity<mp_units::si::radian, double>;
+/// a pose: a position and a rotation vector
+using Pose = fcarouge::typed_column_vector<Eigen::Matrix<double, 6, 1>,
+    Length, Length, Length, Angle, Angle, Angle>;
+/// the typed matrix of the typed expression E, held in an Eigen matrix
+template<typename E>
+using Evaluated = fcarouge::typed_matrix<Eigen::Matrix<double, E::rows, E::columns>,
+    typename E::row_indexes, typename E::column_indexes>;
+using Covariance =
+  Evaluated<decltype(std::declval<Pose>() * fcarouge::transposed(std::declval<Pose>()))>;
+/// the change of a pose per change of a pose
+using Jacobian = Evaluated<decltype(std::declval<Pose>() / std::declval<Pose>())>;
+}  // namespace typed_covariance
+}  // namespace impl
+
 /** \brief Transform the covariance matrix of a PoseWithCovariance message to a new frame.
  * \param cov_in The covariance matrix to transform.
  * \param transform The transform to apply, as a tf2::Transform structure.
@@ -606,80 +632,37 @@ geometry_msgs::msg::PoseWithCovariance::_covariance_type transformCovariance(
    *         R' is the transpose of the rotation matrix.
    *         COVARIANCE is the 6x6 covariance matrix to be transformed.
    *
+   * The covariance is typed: its position block is in square metres, its orientation block in
+   * square radians, and the cross blocks in metre radians, so that the transformation is checked
+   * for units at compile time.
+   *
    * Reference:
    *         A. L. Garcia, “Linear Transformations of Random Vectors,” in Probability,
    *         Statistics, and Random Processes For Electrical Engineering, 3rd ed.,
    *         Pearson Prentice Hall, 2008, pp. 320–322.
    */
+  using impl::typed_covariance::Covariance;
+  using impl::typed_covariance::Jacobian;
 
-  // get rotation matrix (and transpose)
+  // the covariance, row major
+  using RowMajor = Eigen::Matrix<double, 6, 6, Eigen::RowMajor>;
+  const Covariance cov{Eigen::Matrix<double, 6, 6>{Eigen::Map<const RowMajor>(cov_in.data())}};
+
+  // the rotation of the position and of the orientation: the unitless blocks of the Jacobian
   const tf2::Matrix3x3 R = transform.getBasis();
-  const tf2::Matrix3x3 R_transpose = R.transpose();
+  Jacobian J{};
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      J.data()(i, j) = R[i][j];
+      J.data()(i + 3, j + 3) = R[i][j];
+    }
+  }
 
-  // convert covariance matrix into four 3x3 blocks
-  // *INDENT-OFF*
-  const tf2::Matrix3x3 cov_11(cov_in[0], cov_in[1], cov_in[2],
-                              cov_in[6], cov_in[7], cov_in[8],
-                              cov_in[12], cov_in[13], cov_in[14]);
-  const tf2::Matrix3x3 cov_12(cov_in[3], cov_in[4], cov_in[5],
-                              cov_in[9], cov_in[10], cov_in[11],
-                              cov_in[15], cov_in[16], cov_in[17]);
-  const tf2::Matrix3x3 cov_21(cov_in[18], cov_in[19], cov_in[20],
-                              cov_in[24], cov_in[25], cov_in[26],
-                              cov_in[30], cov_in[31], cov_in[32]);
-  const tf2::Matrix3x3 cov_22(cov_in[21], cov_in[22], cov_in[23],
-                              cov_in[27], cov_in[28], cov_in[29],
-                              cov_in[33], cov_in[34], cov_in[35]);
-  // *INDENT-ON*
+  const Covariance result{J * cov * fcarouge::transposed(J)};
 
-  // perform blockwise matrix multiplication
-  const tf2::Matrix3x3 result_11 = R * cov_11 * R_transpose;
-  const tf2::Matrix3x3 result_12 = R * cov_12 * R_transpose;
-  const tf2::Matrix3x3 result_21 = R * cov_21 * R_transpose;
-  const tf2::Matrix3x3 result_22 = R * cov_22 * R_transpose;
-
-  // form the output
+  // form the output, row major
   geometry_msgs::msg::PoseWithCovariance::_covariance_type cov_out;
-  cov_out[0] = result_11[0][0];
-  cov_out[1] = result_11[0][1];
-  cov_out[2] = result_11[0][2];
-  cov_out[6] = result_11[1][0];
-  cov_out[7] = result_11[1][1];
-  cov_out[8] = result_11[1][2];
-  cov_out[12] = result_11[2][0];
-  cov_out[13] = result_11[2][1];
-  cov_out[14] = result_11[2][2];
-
-  cov_out[3] = result_12[0][0];
-  cov_out[4] = result_12[0][1];
-  cov_out[5] = result_12[0][2];
-  cov_out[9] = result_12[1][0];
-  cov_out[10] = result_12[1][1];
-  cov_out[11] = result_12[1][2];
-  cov_out[15] = result_12[2][0];
-  cov_out[16] = result_12[2][1];
-  cov_out[17] = result_12[2][2];
-
-  cov_out[18] = result_21[0][0];
-  cov_out[19] = result_21[0][1];
-  cov_out[20] = result_21[0][2];
-  cov_out[24] = result_21[1][0];
-  cov_out[25] = result_21[1][1];
-  cov_out[26] = result_21[1][2];
-  cov_out[30] = result_21[2][0];
-  cov_out[31] = result_21[2][1];
-  cov_out[32] = result_21[2][2];
-
-  cov_out[21] = result_22[0][0];
-  cov_out[22] = result_22[0][1];
-  cov_out[23] = result_22[0][2];
-  cov_out[27] = result_22[1][0];
-  cov_out[28] = result_22[1][1];
-  cov_out[29] = result_22[1][2];
-  cov_out[33] = result_22[2][0];
-  cov_out[34] = result_22[2][1];
-  cov_out[35] = result_22[2][2];
-
+  Eigen::Map<RowMajor>(cov_out.data()) = result.data();
   return cov_out;
 }
 
