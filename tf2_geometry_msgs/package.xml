@@ -19,6 +19,8 @@
   <depend>geometry_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
+  <depend>eigen</depend>
+  <depend>fcarouge_vendor</depend>
 
   <build_depend>liborocos-kdl-dev</build_depend>
 

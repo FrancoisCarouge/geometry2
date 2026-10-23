@@ -26,6 +26,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(fcarouge_vendor REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME}
   PACKAGE_DIR src/${PROJECT_NAME})
@@ -38,7 +40,9 @@ target_link_libraries(${PROJECT_NAME} INTERFACE
   geometry_msgs::geometry_msgs
   orocos-kdl
   tf2::tf2
-  tf2_ros::tf2_ros)
+  tf2_ros::tf2_ros
+  Eigen3::Eigen
+  fcarouge_vendor::fcarouge_vendor)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -78,6 +82,8 @@ ament_export_dependencies(
   "geometry_msgs"
   "orocos_kdl"
   "tf2"
-  "tf2_ros")
+  "tf2_ros"
+  "Eigen3"
+  "fcarouge_vendor")
 
 ament_package()
