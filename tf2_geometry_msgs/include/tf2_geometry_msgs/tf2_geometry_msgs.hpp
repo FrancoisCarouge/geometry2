@@ -35,6 +35,7 @@
 #define TF2_GEOMETRY_MSGS__TF2_GEOMETRY_MSGS_HPP_
 
 #include <array>
+#include <cstddef>
 #include <string>
 
 #include "geometry_msgs/msg/point_stamped.hpp"
@@ -56,6 +57,7 @@
 #include "kdl/frames.hpp"
 
 #include "tf2/convert.hpp"
+#include "tf2_geometry_msgs/impl/typed_covariance.hpp"
 #include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2/LinearMath/Transform.hpp"
 #include "tf2/LinearMath/Vector3.hpp"
@@ -612,75 +614,17 @@ geometry_msgs::msg::PoseWithCovariance::_covariance_type transformCovariance(
    *         Pearson Prentice Hall, 2008, pp. 320–322.
    */
 
-  // get rotation matrix (and transpose)
+  // The covariance is typed: its position block in square metres, its orientation block in square
+  // radians, its cross blocks in metre radians, so that the transformation is checked for units at
+  // compile time. The rotation is sparse: only its two blocks are stored and multiplied.
   const tf2::Matrix3x3 R = transform.getBasis();
-  const tf2::Matrix3x3 R_transpose = R.transpose();
-
-  // convert covariance matrix into four 3x3 blocks
-  // *INDENT-OFF*
-  const tf2::Matrix3x3 cov_11(cov_in[0], cov_in[1], cov_in[2],
-                              cov_in[6], cov_in[7], cov_in[8],
-                              cov_in[12], cov_in[13], cov_in[14]);
-  const tf2::Matrix3x3 cov_12(cov_in[3], cov_in[4], cov_in[5],
-                              cov_in[9], cov_in[10], cov_in[11],
-                              cov_in[15], cov_in[16], cov_in[17]);
-  const tf2::Matrix3x3 cov_21(cov_in[18], cov_in[19], cov_in[20],
-                              cov_in[24], cov_in[25], cov_in[26],
-                              cov_in[30], cov_in[31], cov_in[32]);
-  const tf2::Matrix3x3 cov_22(cov_in[21], cov_in[22], cov_in[23],
-                              cov_in[27], cov_in[28], cov_in[29],
-                              cov_in[33], cov_in[34], cov_in[35]);
-  // *INDENT-ON*
-
-  // perform blockwise matrix multiplication
-  const tf2::Matrix3x3 result_11 = R * cov_11 * R_transpose;
-  const tf2::Matrix3x3 result_12 = R * cov_12 * R_transpose;
-  const tf2::Matrix3x3 result_21 = R * cov_21 * R_transpose;
-  const tf2::Matrix3x3 result_22 = R * cov_22 * R_transpose;
-
-  // form the output
-  geometry_msgs::msg::PoseWithCovariance::_covariance_type cov_out;
-  cov_out[0] = result_11[0][0];
-  cov_out[1] = result_11[0][1];
-  cov_out[2] = result_11[0][2];
-  cov_out[6] = result_11[1][0];
-  cov_out[7] = result_11[1][1];
-  cov_out[8] = result_11[1][2];
-  cov_out[12] = result_11[2][0];
-  cov_out[13] = result_11[2][1];
-  cov_out[14] = result_11[2][2];
-
-  cov_out[3] = result_12[0][0];
-  cov_out[4] = result_12[0][1];
-  cov_out[5] = result_12[0][2];
-  cov_out[9] = result_12[1][0];
-  cov_out[10] = result_12[1][1];
-  cov_out[11] = result_12[1][2];
-  cov_out[15] = result_12[2][0];
-  cov_out[16] = result_12[2][1];
-  cov_out[17] = result_12[2][2];
-
-  cov_out[18] = result_21[0][0];
-  cov_out[19] = result_21[0][1];
-  cov_out[20] = result_21[0][2];
-  cov_out[24] = result_21[1][0];
-  cov_out[25] = result_21[1][1];
-  cov_out[26] = result_21[1][2];
-  cov_out[30] = result_21[2][0];
-  cov_out[31] = result_21[2][1];
-  cov_out[32] = result_21[2][2];
-
-  cov_out[21] = result_22[0][0];
-  cov_out[22] = result_22[0][1];
-  cov_out[23] = result_22[0][2];
-  cov_out[27] = result_22[1][0];
-  cov_out[28] = result_22[1][1];
-  cov_out[29] = result_22[1][2];
-  cov_out[33] = result_22[2][0];
-  cov_out[34] = result_22[2][1];
-  cov_out[35] = result_22[2][2];
-
-  return cov_out;
+  std::array<std::array<double, 3>, 3> basis;
+  for (std::size_t row = 0; row < 3; ++row) {
+    for (std::size_t column = 0; column < 3; ++column) {
+      basis[row][column] = R[row][column];
+    }
+  }
+  return impl::typed_covariance::rotate(cov_in, basis);
 }
 
 // Forward declaration
