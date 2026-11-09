@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(tf2_geometry_msgs)
 
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic -Wnon-virtual-dtor -Woverloaded-virtual)
 endif()
@@ -26,6 +29,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(orocos_kdl REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(mp-units REQUIRED)
+find_package(fcarouge-typed-linear-algebra REQUIRED)
+find_package(fcarouge-sparse-linear-algebra REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME}
   PACKAGE_DIR src/${PROJECT_NAME})
@@ -38,7 +44,10 @@ target_link_libraries(${PROJECT_NAME} INTERFACE
   geometry_msgs::geometry_msgs
   orocos-kdl
   tf2::tf2
-  tf2_ros::tf2_ros)
+  tf2_ros::tf2_ros
+  mp-units::mp-units
+  fcarouge-typed-linear-algebra::tlinalg
+  fcarouge-sparse-linear-algebra::slinalg)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -72,6 +81,9 @@ ament_export_dependencies(
   "geometry_msgs"
   "orocos_kdl"
   "tf2"
-  "tf2_ros")
+  "tf2_ros"
+  "mp-units"
+  "fcarouge-typed-linear-algebra"
+  "fcarouge-sparse-linear-algebra")
 
 ament_package()

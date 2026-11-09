@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 project(test_tf2)
 
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 find_package(ament_cmake REQUIRED)
 
 if(NOT BUILD_TESTING)
