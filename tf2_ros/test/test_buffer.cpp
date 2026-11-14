@@ -312,6 +312,39 @@ TEST(test_buffer, test_twist)
   EXPECT_NEAR(tw1.velocity.angular.z, 0.0, epsilon);
 }
 
+TEST(test_buffer, velocity_at_a_reference_point_of_a_rotating_frame)
+{
+  // A frame spinning about z at 1 rad/s at the origin of its parent: its point (1, 0, 0) moves at
+  // the angular velocity cross the lever arm, (0, 0, 1) x (1, 0, 0) = (0, 1, 0) m/s.
+  rclcpp::Clock::SharedPtr clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
+  tf2_ros::Buffer buffer(clock);
+  const rclcpp::Time rclcpp_time = clock->now();
+  const tf2::TimePoint tf2_time(std::chrono::nanoseconds(rclcpp_time.nanoseconds()));
+
+  for (int i = -10; i <= 10; ++i) {
+    const double yaw = 0.1 * i;
+    geometry_msgs::msg::TransformStamped transform;
+    transform.header.frame_id = "PARENT";
+    transform.header.stamp = builtin_interfaces::msg::Time(
+      rclcpp_time + rclcpp::Duration::from_seconds(0.1 * i));
+    transform.child_frame_id = "SPINNER";
+    transform.transform.rotation.w = std::cos(yaw / 2);
+    transform.transform.rotation.z = std::sin(yaw / 2);
+    EXPECT_TRUE(buffer.setTransform(transform, "unittest"));
+  }
+
+  const auto twist = buffer.lookupVelocity(
+    "SPINNER", "PARENT", "PARENT", {1, 0, 0}, "SPINNER", tf2_time, tf2::durationFromSec(0.2));
+
+  const double epsilon = 1e-6;
+  EXPECT_NEAR(twist.velocity.angular.x, 0.0, epsilon);
+  EXPECT_NEAR(twist.velocity.angular.y, 0.0, epsilon);
+  EXPECT_NEAR(twist.velocity.angular.z, 1.0, epsilon);
+  EXPECT_NEAR(twist.velocity.linear.x, 0.0, epsilon);
+  EXPECT_NEAR(twist.velocity.linear.y, 1.0, epsilon);
+  EXPECT_NEAR(twist.velocity.linear.z, 0.0, epsilon);
+}
+
 TEST(test_buffer, can_transform_without_dedicated_thread)
 {
   rclcpp::Clock::SharedPtr clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
