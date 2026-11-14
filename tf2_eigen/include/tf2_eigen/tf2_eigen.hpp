@@ -33,6 +33,8 @@
 
 #include <Eigen/Geometry>
 
+#include <array>
+
 #include "geometry_msgs/msg/accel.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/point_stamped.hpp"
@@ -43,6 +45,7 @@
 
 #include "tf2/convert.hpp"
 #include "tf2_ros/buffer_interface.hpp"
+#include "tf2_eigen/impl/typed_adjoint.hpp"
 
 namespace tf2
 {
@@ -156,27 +159,19 @@ void doTransform(
   // https://core.ac.uk/download/pdf/154240607.pdf
   // http://hades.mech.northwestern.edu/images/7/7f/MR.pdf Eq'n 3.83
 
-  Eigen::Isometry3d affine_transform = tf2::transformToEigen(transform);
-
-  // Build the 6x6 transformation matrix
-  Eigen::MatrixXd twist_transform(6, 6);
-  // upper left 3x3 block is the rotation part
-  twist_transform.block(0, 0, 3, 3) = affine_transform.rotation();
-  // upper right 3x3 block is all zeros
-  twist_transform.block(0, 3, 3, 3) = Eigen::MatrixXd::Zero(3, 3);
-  // lower left 3x3 block is tricky. See https://core.ac.uk/download/pdf/154240607.pdf
-  Eigen::MatrixXd pos_vector_3x3(3, 3);
-  // Disable formatting checks so the matrix remains human-readable
-  /* *INDENT-OFF* */
-  pos_vector_3x3 << 0, -affine_transform.translation().z(), affine_transform.translation().y(),
-                    affine_transform.translation().z(), 0, -affine_transform.translation().x(),
-                    -affine_transform.translation().y(), affine_transform.translation().x(), 0;
-  /* *INDENT-ON* */
-  twist_transform.block(3, 0, 3, 3) = pos_vector_3x3 * affine_transform.rotation();
-  // lower right 3x3 block is the rotation part
-  twist_transform.block(3, 3, 3, 3) = affine_transform.rotation();
-
-  t_out = twist_transform * t_in;
+  // The 6x6 transformation matrix, typed: the rotation on the diagonal blocks, the lever arm in
+  // metres in the lower left block, zero in the upper right one.
+  const Eigen::Isometry3d affine_transform = tf2::transformToEigen(transform);
+  const Eigen::Matrix3d rotation = affine_transform.rotation();
+  const std::array<std::array<double, 3>, 3> basis{{
+    {rotation(0, 0), rotation(0, 1), rotation(0, 2)},
+    {rotation(1, 0), rotation(1, 1), rotation(1, 2)},
+    {rotation(2, 0), rotation(2, 1), rotation(2, 2)}}};
+  const std::array<double, 6> out = tf2::impl::typed_adjoint::transform(
+    {t_in(0), t_in(1), t_in(2), t_in(3), t_in(4), t_in(5)}, basis,
+    {affine_transform.translation().x(), affine_transform.translation().y(),
+      affine_transform.translation().z()});
+  t_out = Eigen::Map<const Eigen::VectorXd>(out.data(), 6);
 }
 
 /** \brief Convert a Eigen Vector3d type to a Point message.
