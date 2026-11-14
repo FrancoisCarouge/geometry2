@@ -697,7 +697,7 @@ geometry_msgs::msg::VelocityStamped BufferCore::lookupVelocity(
     reference_frame, reference_point_frame, reference_point, time_seconds);
 
   tf2::Vector3 delta = rp_desired - rp_orig;
-  out_vel = out_vel + out_rot * delta;
+  out_vel = out_vel + out_rot.cross(delta);
 
   std::chrono::nanoseconds ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
     tf2::timeFromSec(start_time + averaging_interval_seconds * 0.5).time_since_epoch());
