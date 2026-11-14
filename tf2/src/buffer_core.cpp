@@ -44,6 +44,7 @@
 
 #include "rcutils/logging_macros.h"
 
+#include "tf2/typed/linear_math.hpp"
 #include "tf2/buffer_core.hpp"
 #include "tf2/time_cache.hpp"
 #include "tf2/exceptions.hpp"
@@ -653,27 +654,35 @@ geometry_msgs::msg::VelocityStamped BufferCore::lookupVelocity(
   auto o = start.getBasis() * quat_temp.getAxis();
   auto ang = quat_temp.getAngle();
 
-  double delta_x = end.getOrigin().getX() - start.getOrigin().getX();
-  double delta_y = end.getOrigin().getY() - start.getOrigin().getY();
-  double delta_z = end.getOrigin().getZ() - start.getOrigin().getZ();
-
-  tf2::Vector3 twist_vel((delta_x) / corrected_averaging_interval,
-    (delta_y) / corrected_averaging_interval,
-    (delta_z) / corrected_averaging_interval);
-  tf2::Vector3 twist_rot = o * (ang / corrected_averaging_interval);
+  // The velocities, typed: the displacement over the averaging interval, the rotation angle over
+  // it about the axis in the observation frame.
+  using tf2::typed::AngularSpeed;
+  using tf2::typed::Length;
+  using tf2::typed::Position;
+  using tf2::typed::Speed;
+  using tf2::typed::Vector;
+  const tf2::typed::Duration interval{corrected_averaging_interval * mp_units::si::second};
+  const Position displacement{
+    tf2::typed::typed<Length>(end.getOrigin()) - tf2::typed::typed<Length>(start.getOrigin())};
+  const Vector<Speed> twist_vel{displacement.at<0>() / interval,
+    displacement.at<1>() / interval, displacement.at<2>() / interval};
+  const AngularSpeed angular_speed{ang * mp_units::one / interval};
+  const Vector<AngularSpeed> twist_rot{o.x() * angular_speed, o.y() * angular_speed,
+    o.z() * angular_speed};
 
   // correct for the position of the reference frame
   tf2::Transform inverse;
   lookupTransformImpl(
     reference_frame, tracking_frame, tf2::timeFromSec(
       time_seconds), inverse, time_out);
-  tf2::Vector3 out_rot = inverse.getBasis() * twist_rot;
-  tf2::Vector3 out_vel = inverse.getBasis() * twist_vel + inverse.getOrigin().cross(out_rot);
+  const Vector<AngularSpeed> out_rot{tf2::typed::rotate(inverse.getBasis(), twist_rot)};
+  Vector<Speed> out_vel{tf2::typed::rotate(inverse.getBasis(), twist_vel) +
+    tf2::typed::cross(tf2::typed::typed<Length>(inverse.getOrigin()), out_rot)};
 
   auto transform_point = [this](
     const std::string & target_frame,
     const std::string & source_frame,
-    const tf2::Vector3 & point_in,
+    const Position & point_in,
     double time_transform)
     {
       // transform point
@@ -681,23 +690,21 @@ geometry_msgs::msg::VelocityStamped BufferCore::lookupVelocity(
       tf2::TimePoint time_out;
       lookupTransformImpl(
         target_frame, source_frame, tf2::timeFromSec(time_transform), transform, time_out);
-
-      tf2::Vector3 out;
-      out = transform * point_in;
-      return out;
+      return tf2::typed::apply(transform, point_in);
     };
 
   // Rereference the twist about a new reference point
   // Start by computing the original reference point in the reference frame:
-  tf2::Vector3 p = tf2::Vector3(0, 0, 0);
-  tf2::Vector3 rp_orig = transform_point(
-    reference_frame, tracking_frame, p, time_seconds);
+  const Position rp_orig = transform_point(
+    reference_frame, tracking_frame, tf2::typed::typed<Length>(tf2::Vector3(0, 0, 0)),
+    time_seconds);
 
-  tf2::Vector3 rp_desired = transform_point(
-    reference_frame, reference_point_frame, reference_point, time_seconds);
+  const Position rp_desired = transform_point(
+    reference_frame, reference_point_frame, tf2::typed::typed<Length>(reference_point),
+    time_seconds);
 
-  tf2::Vector3 delta = rp_desired - rp_orig;
-  out_vel = out_vel + out_rot.cross(delta);
+  const Position delta{rp_desired - rp_orig};
+  out_vel = Vector<Speed>{out_vel + tf2::typed::cross(out_rot, delta)};
 
   std::chrono::nanoseconds ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
     tf2::timeFromSec(start_time + averaging_interval_seconds * 0.5).time_since_epoch());
@@ -709,12 +716,14 @@ geometry_msgs::msg::VelocityStamped BufferCore::lookupVelocity(
   velocity.header.frame_id = reference_frame;
   velocity.body_frame_id = tracking_frame;
 
-  velocity.velocity.linear.x = out_vel.x();
-  velocity.velocity.linear.y = out_vel.y();
-  velocity.velocity.linear.z = out_vel.z();
-  velocity.velocity.angular.x = out_rot.x();
-  velocity.velocity.angular.y = out_rot.y();
-  velocity.velocity.angular.z = out_rot.z();
+  const tf2::Vector3 linear = tf2::typed::untyped(out_vel);
+  const tf2::Vector3 angular = tf2::typed::untyped(out_rot);
+  velocity.velocity.linear.x = linear.x();
+  velocity.velocity.linear.y = linear.y();
+  velocity.velocity.linear.z = linear.z();
+  velocity.velocity.angular.x = angular.x();
+  velocity.velocity.angular.y = angular.y();
+  velocity.velocity.angular.z = angular.z();
 
   return velocity;
 }

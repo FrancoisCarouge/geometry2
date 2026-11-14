@@ -14,6 +14,9 @@ find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rosidl_runtime_cpp REQUIRED)
+find_package(mp-units REQUIRED)
+find_package(fcarouge-typed-linear-algebra REQUIRED)
+find_package(fcarouge-sparse-linear-algebra REQUIRED)
 
 # export user definitions
 
@@ -29,7 +32,10 @@ target_include_directories(tf2 PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
 target_link_libraries(tf2 PUBLIC
-  geometry_msgs::geometry_msgs)
+  geometry_msgs::geometry_msgs
+  mp-units::mp-units
+  fcarouge-typed-linear-algebra::tlinalg
+  fcarouge-sparse-linear-algebra::slinalg)
 target_link_libraries(tf2 PRIVATE
   ament_cmake_ros_core::ament_ros_defaults
   builtin_interfaces::builtin_interfaces
@@ -128,7 +134,8 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-ament_export_dependencies(geometry_msgs rosidl_runtime_cpp)
+ament_export_dependencies(geometry_msgs rosidl_runtime_cpp mp-units fcarouge-typed-linear-algebra
+  fcarouge-sparse-linear-algebra)
 
 # Export modern CMake targets
 ament_export_targets(export_tf2)
