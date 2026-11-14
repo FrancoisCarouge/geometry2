@@ -58,6 +58,7 @@
 
 #include "tf2/convert.hpp"
 #include "tf2_geometry_msgs/impl/typed_covariance.hpp"
+#include "tf2_geometry_msgs/impl/typed_screw.hpp"
 #include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2/LinearMath/Transform.hpp"
 #include "tf2/LinearMath/Vector3.hpp"
@@ -1279,12 +1280,6 @@ void doTransform(
   geometry_msgs::msg::VelocityStamped & t_out,
   const geometry_msgs::msg::TransformStamped & transform)
 {
-  tf2::Vector3 twist_rot(t_in.velocity.angular.x,
-    t_in.velocity.angular.y,
-    t_in.velocity.angular.z);
-  tf2::Vector3 twist_vel(t_in.velocity.linear.x,
-    t_in.velocity.linear.y,
-    t_in.velocity.linear.z);
   tf2::Transform transform_temp;
 
   transform_temp.setOrigin(
@@ -1299,31 +1294,24 @@ void doTransform(
       transform.transform.rotation.z,
       transform.transform.rotation.w));
 
-  // tf2::Transform start, end;
-  // TimePoint time_out;
-  // lookupTransformImpl(
-  //     observation_frame, tracking_frame, tf2::timeFromSec(
-  //       start_time), start, time_out);
-
-  // tf::StampedTransform transform;
-  // lookupTransform(target_frame,msg_in.header.frame_id,  msg_in.header.stamp, transform);
-
-  tf2::Vector3 out_rot = transform_temp.getBasis() * twist_rot;
-  tf2::Vector3 out_vel = transform_temp.getBasis() * twist_vel + \
-    transform_temp.getOrigin().cross(out_rot);
-
-  // geometry_msgs::TwistStamped interframe_twist;
-  // lookupVelocity(target_frame, msg_in.header.frame_id, msg_in.header.stamp,
-  //   ros::Duration(0.1), interframe_twist);
-  // \todo get rid of hard coded number
+  // the angular velocity rotated, the linear velocity rotated plus the origin's lever arm
+  const tf2::Matrix3x3 & basis = transform_temp.getBasis();
+  const auto [out_rot, out_vel] = tf2::impl::typed_screw::transform<mp_units::one /
+      mp_units::si::second>(
+    {{{basis[0][0], basis[0][1], basis[0][2]}, {basis[1][0], basis[1][1], basis[1][2]},
+      {basis[2][0], basis[2][1], basis[2][2]}}},
+    {transform_temp.getOrigin().x(), transform_temp.getOrigin().y(),
+      transform_temp.getOrigin().z()},
+    {t_in.velocity.angular.x, t_in.velocity.angular.y, t_in.velocity.angular.z},
+    {t_in.velocity.linear.x, t_in.velocity.linear.y, t_in.velocity.linear.z});
 
   t_out.header = transform.header;
-  t_out.velocity.linear.x = out_vel.x();
-  t_out.velocity.linear.y = out_vel.y();
-  t_out.velocity.linear.z = out_vel.z();
-  t_out.velocity.angular.x = out_rot.x();
-  t_out.velocity.angular.y = out_rot.y();
-  t_out.velocity.angular.z = out_rot.z();
+  t_out.velocity.linear.x = out_vel[0];
+  t_out.velocity.linear.y = out_vel[1];
+  t_out.velocity.linear.z = out_vel[2];
+  t_out.velocity.angular.x = out_rot[0];
+  t_out.velocity.angular.y = out_rot[1];
+  t_out.velocity.angular.z = out_rot[2];
 }
 
 /**********************/
@@ -1364,15 +1352,21 @@ void doTransform(
   const geometry_msgs::msg::Wrench & t_in, geometry_msgs::msg::Wrench & t_out,
   const geometry_msgs::msg::TransformStamped & transform)
 {
-  doTransform(t_in.force, t_out.force, transform);
-  doTransform(t_in.torque, t_out.torque, transform);
-  // add additional torque created by translating the force
-  Vector3 offset = {transform.transform.translation.x, transform.transform.translation.y,
-    transform.transform.translation.z};
-  auto added_torque = offset.cross({t_out.force.x, t_out.force.y, t_out.force.z});
-  t_out.torque.x += added_torque.getX();
-  t_out.torque.y += added_torque.getY();
-  t_out.torque.z += added_torque.getZ();
+  // the force rotated, the torque rotated plus the torque of the translated force
+  const KDL::Rotation rotation = gmTransformToKDL(transform).M;
+  const auto [force, torque] = tf2::impl::typed_screw::transform<mp_units::si::newton>(
+    {{{rotation(0, 0), rotation(0, 1), rotation(0, 2)},
+      {rotation(1, 0), rotation(1, 1), rotation(1, 2)},
+      {rotation(2, 0), rotation(2, 1), rotation(2, 2)}}},
+    {transform.transform.translation.x, transform.transform.translation.y,
+      transform.transform.translation.z},
+    {t_in.force.x, t_in.force.y, t_in.force.z}, {t_in.torque.x, t_in.torque.y, t_in.torque.z});
+  t_out.force.x = force[0];
+  t_out.force.y = force[1];
+  t_out.force.z = force[2];
+  t_out.torque.x = torque[0];
+  t_out.torque.y = torque[1];
+  t_out.torque.z = torque[2];
 }
 
 /** \brief Apply a geometry_msgs TransformStamped to an geometry_msgs WrenchStamped type.
