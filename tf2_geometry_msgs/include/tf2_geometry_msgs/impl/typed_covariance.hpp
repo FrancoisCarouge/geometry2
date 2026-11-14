@@ -25,33 +25,9 @@
 
 #include "fcarouge/sparse_linear_algebra.hpp"
 #include "fcarouge/typed_linear_algebra.hpp"
+#include "tf2/impl/typed_linear_algebra.hpp"
 #include "mp-units/framework/quantity.h"
 #include "mp-units/systems/si.h"
-
-namespace fcarouge
-{
-/// The adapter of the typed linear algebra to mp-units elements: a quantity element is stored as
-/// its numerical value in its own unit, and a stored value is read back as a quantity of that unit.
-template<typename To, mp_units::Quantity From>
-struct element_caster<To, From>
-{
-  [[nodiscard]] static constexpr auto operator()(From value) -> To
-  {
-    static_assert(std::same_as<typename From::rep, std::remove_cvref_t<To>>);
-    return value.numerical_value_in(From::unit);
-  }
-};
-
-template<mp_units::Quantity To, typename From>
-struct element_caster<To, From>
-{
-  [[nodiscard]] static constexpr auto operator()(From value) -> To
-  {
-    static_assert(std::same_as<typename To::rep, std::remove_cvref_t<From>>);
-    return value * To::reference;
-  }
-};
-}  // namespace fcarouge
 
 namespace tf2
 {
