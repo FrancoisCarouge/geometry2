@@ -12,6 +12,9 @@ find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(mp-units REQUIRED)
+find_package(fcarouge-typed-linear-algebra REQUIRED)
+find_package(fcarouge-sparse-linear-algebra REQUIRED)
 
 # Work around broken find module in AlmaLinux/RHEL eigen3-devel from PowerTools repo
 find_package(Eigen3 QUIET NO_MODULE)
@@ -23,7 +26,10 @@ add_library(tf2_eigen INTERFACE)
 target_link_libraries(tf2_eigen INTERFACE
   geometry_msgs::geometry_msgs
   tf2::tf2
-  tf2_ros::tf2_ros)
+  tf2_ros::tf2_ros
+  mp-units::mp-units
+  fcarouge-typed-linear-algebra::tlinalg
+  fcarouge-sparse-linear-algebra::slinalg)
 target_include_directories(tf2_eigen INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
@@ -66,7 +72,10 @@ endif()
 ament_export_dependencies(
   Eigen3
   tf2
-  tf2_ros)
+  tf2_ros
+  mp-units
+  fcarouge-typed-linear-algebra
+  fcarouge-sparse-linear-algebra)
 
 # Export modern CMake targets
 ament_export_targets(export_tf2_eigen)
