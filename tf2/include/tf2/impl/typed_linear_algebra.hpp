@@ -51,4 +51,12 @@ struct element_caster<To, From>
 };
 }  // namespace fcarouge
 
+/// A typed matrix of quantities is never a quantity's representation: without this, mp-units'
+/// `quantity * value` tests the matrix as a representation, `matrix * mag<1>`, which fails to
+/// compile inside the typed linear algebra instead of declining. Every typed matrix here holds
+/// quantities.
+template<typename Matrix, typename RowIndexes, typename ColumnIndexes>
+inline constexpr bool mp_units::disable_representation<
+  fcarouge::typed_matrix<Matrix, RowIndexes, ColumnIndexes>>{true};
+
 #endif  // TF2__IMPL__TYPED_LINEAR_ALGEBRA_HPP_
